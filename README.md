@@ -99,6 +99,8 @@ This repository is organized for collaborative development across three contribu
 - `feature/ichcha-ai`: AI, NLP, scoring, and explainability
 - `feature/bk-frontend`: dashboard, tests, and documentation
 
+**Note:** Always create feature branches and submit PRs for code review before merging to main.
+
 ### Commit conventions
 - Use Conventional Commits:
   - `feat: add complaint analysis endpoint`
