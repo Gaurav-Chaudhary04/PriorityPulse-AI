@@ -1,130 +1,83 @@
-# PriorityPulse-AI
+# Generative AI System for Context-Aware Complaint Prioritization
 
 ## Overview
-PriorityPulse-AI is a Python-based complaint prioritization system that combines NLP, rule-based AI, and explainable scoring to identify urgent or high-impact customer issues. It is designed as a prototype for a support operations dashboard that highlights critical complaints and explains why they should be escalated.
+Organizations receive a large number of customer complaints every day through emails, apps, and support portals.  
+Most existing systems prioritize complaints using simple keyword matching or sentiment analysis, which often fails to identify **truly urgent or high-impact issues**.
 
-## Current Status
-- Backend API built with FastAPI
-- Complaint persistence via SQLAlchemy
-- NLP preprocessing using spaCy
-- Rule-based analysis and explainability pipeline
-- Priority scoring implementation
-- Static dashboard placeholder included
-- Basic tests available
+This project aims to build an **AI-based complaint prioritization system** that understands the **context and meaning** of a complaint instead of relying only on keywords or sentiment.
 
-## Tech Stack
-- Python 3.10+
+---
+
+## Problem Statement
+Current complaint management systems:
+- Do not understand the real urgency of a complaint
+- Treat all complaints as independent cases
+- Fail to detect repeated or systemic issues
+- Do not explain why a complaint is escalated
+
+Because of this, critical complaints may be delayed while less important ones are handled first.
+
+---
+
+## Proposed Solution
+This project proposes a **Generative AI-powered system** that:
+- Analyzes complaint text using NLP
+- Infers urgency and business impact
+- Detects whether a complaint is part of a larger recurring issue
+- Assigns a priority score based on context
+- Generates a clear explanation for escalation decisions
+- Learns from human feedback over time
+
+---
+
+## Core Idea
+Instead of only checking whether a complaint is negative, the system answers:
+- How urgent is the complaint?
+- How serious is the impact?
+- Is this an isolated issue or a recurring problem?
+- Why should this complaint be handled first?
+
+---
+
+## System Flow
+1. Complaint is received with text and metadata
+2. Text is cleaned and preprocessed
+3. AI models analyze the complaint
+4. Urgency, impact, and systemic risk are inferred
+5. A priority score is calculated
+6. An explanation is generated
+7. Complaint is shown in a prioritized dashboard
+8. Human feedback is collected for improvement
+
+---
+
+## Key Features
+- Context-aware complaint prioritization
+- Urgency and impact prediction
+- Systemic issue detection
+- Explainable AI decisions
+- Human-in-the-loop feedback mechanism
+
+---
+
+## Technologies Used
+- Python
+- NLP and Generative AI (LLMs)
 - FastAPI
-- SQLAlchemy
-- spaCy
-- SQLite (local prototype)
-- Uvicorn
+- Machine Learning
+- Dashboard for visualization and monitoring
 
-## Repository Structure
-```
-PriorityPulse-AI/
-├── app/
-│   ├── api/
-│   │   └── routes.py
-│   ├── db/
-│   │   └── database.py
-│   ├── models/
-│   │   ├── complaint.py
-│   │   └── priority.py
-│   ├── schemas/
-│   │   ├── request.py
-│   │   └── response.py
-│   ├── services/
-│   │   ├── explainability.py
-│   │   ├── llm_engine.py
-│   │   ├── nlp.py
-│   │   └── scoring.py
-│   └── main.py
-├── dashboard.html
-├── requirements.txt
-├── README.md
-├── CONTRIBUTING.md
-├── CHANGELOG.md
-├── docs/
-│   └── branching-and-workflow.md
-├── test_api.py
-└── test_classification.py
-```
+---
 
-## Setup
-1. Create and activate a virtual environment:
+## Project Scope
+This project can be used as:
+- A B.Tech final year project
+- A hackathon project
+- A prototype for enterprise complaint management systems
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-source .venv/bin/activate # macOS/Linux
-```
+Future improvements may include multilingual support, automatic ticket routing, and advanced analytics.
 
-2. Install dependencies:
+---
 
-```bash
-pip install -r requirements.txt
-```
-
-3. Download the spaCy model:
-
-```bash
-python -m spacy download en_core_web_sm
-```
-
-4. Run the app:
-
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-5. Open the dashboard at:
-
-```text
-http://localhost:8000/dashboard-page
-```
-
-## API Endpoints
-- `POST /complaints` — create a complaint
-- `POST /analyse` — generate urgency, impact, systemic risk
-- `POST /score` — compute score and escalation outcome
-- `GET /dashboard-page` — serve the dashboard page
-
-## Contribution Workflow
-This repository is organized for collaborative development across three contributors.
-
-### Branch strategy
-- `main`: production-ready code, reviewed PRs only
-- `feature/gaurav-backend`: backend and database improvements
-- `feature/ichcha-ai`: AI, NLP, scoring, and explainability
-- `feature/bk-frontend`: dashboard, tests, and documentation
-
-### Commit conventions
-- Use Conventional Commits:
-  - `feat: add complaint analysis endpoint`
-  - `fix: correct score normalization`
-  - `docs: update README and contributing guide`
-  - `test: add pipeline coverage tests`
-
-### Pull requests
-- Open one PR per feature branch
-- Require at least one review from another team member
-- Use squash merge into `main` for a clean history
-
-## Testing
-Run the test suite with:
-
-```bash
-python test_api.py
-```
-
-## Notes for reviewers
-- Keep `main` stable and merge only completed feature work
-- Make all documentation changes in `README.md` and `CONTRIBUTING.md`
-- Track team ownership via branch names and issue assignments
-
-## Project goals for evaluation
-- Frequent, meaningful commits from all three team members
-- Clear branch ownership and PR-based collaboration
-- Strong documentation and setup guidance
-- Clean, professional main branch history
+## Goal
+The goal of this project is to demonstrate how **Generative AI and NLP** can be used to build **intelligent, explainable, and scalable complaint prioritization systems** for real-world use cases.
