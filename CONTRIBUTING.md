@@ -11,12 +11,12 @@ Use this guide to keep contributions consistent, traceable, and review-ready.
 
 ## Workflow
 1. Sync `main` locally before starting work:
-   ```bash
+```bash
 git switch main
 git pull origin main
 ```
 2. Create a feature branch:
-   ```bash
+```bash
 git switch -c feature/<owner>-<scope>
 ```
 3. Work on one feature or issue at a time.
