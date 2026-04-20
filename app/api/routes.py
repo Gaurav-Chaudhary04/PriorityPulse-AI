@@ -13,8 +13,8 @@ from app.schemas.response import (
     DashboardResponse,
     ExplanationResponse,
     ScoreResponse,
+    ScoreBreakdown
 )
-from app.services.explainability import build_explainable_output
 from app.services.llm_engine import analyze_complaint
 from app.services.scoring import compute_score, format_priority_response
 
@@ -27,7 +27,12 @@ def create_complaint(payload: ComplaintRequest, db: Session = Depends(get_db)) -
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Complaint text cannot be empty.")
 
-    complaint = Complaint(text=payload.text.strip(), created_at=datetime.utcnow())
+    complaint = Complaint(
+        text=payload.text.strip(),
+        product_category=payload.product_category,
+        problem_description=payload.problem_description,
+        created_at=datetime.utcnow()
+    )
     db.add(complaint)
     db.commit()
     db.refresh(complaint)
@@ -37,62 +42,66 @@ def create_complaint(payload: ComplaintRequest, db: Session = Depends(get_db)) -
 
 @router.post("/analyse", response_model=AnalysisResponse)
 def analyse_complaint(payload: AnalysisRequest, db: Session = Depends(get_db)) -> AnalysisResponse:
-    """Run NLP preprocessing and LLM-style analysis on a complaint text."""
-    complaint = db.query(Complaint).filter(Complaint.id == payload.complaint_id).first()
-    if not complaint:
-        raise HTTPException(status_code=404, detail="Complaint not found")
+    """Run NLP preprocessing and SRE-constrained LLM analysis on a complaint."""
+    try:
+        complaint = db.query(Complaint).filter(Complaint.id == payload.complaint_id).first()
+        if not complaint:
+            raise HTTPException(status_code=404, detail="Complaint not found")
 
-    analysis = analyze_complaint(complaint.text, db)
+        analysis = analyze_complaint(complaint, payload.active_system_incidents, db)
 
-    return AnalysisResponse(
-        urgency=analysis["urgency"],
-        impact=analysis["impact"],
-        systemic_risk=analysis["systemic_risk"],
-        confidence=analysis["confidence"],
-        explanation=analysis["explanation"],
-        entities=analysis.get("entities", []),
-        keywords=analysis.get("keywords", []),
-    )
+        return AnalysisResponse(
+            priority=analysis.priority,
+            scores=ScoreBreakdown(
+                systemic_risk=analysis.systemic_risk_score,
+                urgency=analysis.urgency_score,
+                impact=analysis.impact_score,
+                incident_match=analysis.incident_match_score
+            ),
+            context_analysis=analysis.context_analysis,
+            explanation=analysis.explanation,
+            entities=analysis.entities,
+            keywords=analysis.keywords,
+        )
+    except Exception as e:
+        import traceback
+        raise HTTPException(status_code=500, detail=f"Crash details: {traceback.format_exc()}")
 
 
 @router.post("/score", response_model=ScoreResponse)
 def score_complaint(payload: ScoreRequest, db: Session = Depends(get_db)) -> ScoreResponse:
-    """Calculate composite score, persist priority, return score details."""
+    """Calculate explicit composite score, persist priority, return score details."""
     complaint = db.query(Complaint).filter(Complaint.id == payload.complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
 
-    # Analyze exists as dependency.
-    analysis = analyze_complaint(complaint.text, db)
-    score_data = compute_score(analysis["urgency"], analysis["impact"], analysis["systemic_risk"])
-
-    explanation_data = build_explainable_output(analysis, score_data)
+    analysis = analyze_complaint(complaint, payload.active_system_incidents, db)
+    score_data = compute_score(analysis)
 
     existing_priority = db.query(Priority).filter(Priority.complaint_id == payload.complaint_id).first()
-    explanation_json = {
-        "analysis": analysis,
-        "explainability": explanation_data,
-        "timestamp": datetime.utcnow().isoformat(),
-    }
-
+    
     if existing_priority:
         existing_priority.score = score_data["score"]
         existing_priority.level = score_data["level"]
         existing_priority.escalation_flag = score_data["escalation_flag"]
-        existing_priority.urgency = analysis["urgency"]
-        existing_priority.impact = analysis["impact"]
-        existing_priority.systemic_risk = analysis["systemic_risk"]
-        existing_priority.explanation_json = str(explanation_json)
+        existing_priority.urgency = analysis.urgency_score
+        existing_priority.impact = analysis.impact_score
+        existing_priority.systemic_risk = analysis.systemic_risk_score
+        existing_priority.incident_match = analysis.incident_match_score
+        existing_priority.context_analysis = analysis.context_analysis
+        existing_priority.explanation_json = score_data["explanation"]
     else:
         priority = Priority(
             complaint_id=complaint.id,
             score=score_data["score"],
             level=score_data["level"],
             escalation_flag=score_data["escalation_flag"],
-            urgency=analysis["urgency"],
-            impact=analysis["impact"],
-            systemic_risk=analysis["systemic_risk"],
-            explanation_json=str(explanation_json),
+            urgency=analysis.urgency_score,
+            impact=analysis.impact_score,
+            systemic_risk=analysis.systemic_risk_score,
+            incident_match=analysis.incident_match_score,
+            context_analysis=analysis.context_analysis,
+            explanation_json=score_data["explanation"],
         )
         db.add(priority)
 
@@ -105,21 +114,14 @@ def score_complaint(payload: ScoreRequest, db: Session = Depends(get_db)) -> Sco
 
 @router.get("/explanation/{complaint_id}", response_model=ExplanationResponse)
 def get_explanation(complaint_id: int, db: Session = Depends(get_db)) -> ExplanationResponse:
-    """Return structured explainability for priority decision."""
+    """Return explicit explainability metrics for priority decision."""
     priority = db.query(Priority).filter(Priority.complaint_id == complaint_id).first()
     if not priority:
         raise HTTPException(status_code=404, detail="Priority record not found. Call /score first.")
 
-    # Interpret stored explanation_json if needed
-    # We store string here, but not parse to avoid dependency.
     return ExplanationResponse(
-        urgency_reason=f"Urgency assigned as '{priority.urgency}'.",
-        impact_reason=f"Impact assigned as '{priority.impact}'.",
-        systemic_risk_reason=(
-            "Systemic risk detected based on historical patterns."
-            if priority.systemic_risk == "detected"
-            else "No systemic risk patterns detected."
-        ),
+        context_analysis=priority.context_analysis or "No explicit context analysis stored.",
+        reasoning=priority.explanation_json,
         score=priority.score,
         level=priority.level,
         escalation_flag=priority.escalation_flag,
@@ -134,18 +136,16 @@ def get_dashboard(
     """Return summary metrics for complaint prioritization."""
     total = db.query(Complaint).count()
 
-    high_priority_count = db.query(Priority).filter(Priority.level.in_(["high", "critical"])).count()
+    high_priority_count = db.query(Priority).filter(Priority.level.in_(["HIGH", "CRITICAL"])).count()
     escalated_cases_count = db.query(Priority).filter(Priority.escalation_flag.is_(True)).count()
 
     from sqlalchemy import case, desc
 
-    # Multi-level priority sort: Critical > High > Medium > Low;
-    # within same priority by score desc, then newest timestamp desc.
     priority_order = case(
-        (Priority.level == "critical", 1),
-        (Priority.level == "high", 2),
-        (Priority.level == "medium", 3),
-        (Priority.level == "low", 4),
+        (Priority.level == "CRITICAL", 1),
+        (Priority.level == "HIGH", 2),
+        (Priority.level == "MEDIUM", 3),
+        (Priority.level == "LOW", 4),
         else_=5,
     )
 
@@ -168,9 +168,20 @@ def get_dashboard(
         latest_list.append({
             "id": complaint.id,
             "text": complaint.text,
-            "priority": priority.level if priority else "low",
+            "problem_description": complaint.problem_description or "",
+            "category": complaint.product_category or "System",
+            "priority": priority.level if priority else "LOW",
             "score": priority.score if priority else 0.0,
-            "timestamp": complaint.created_at.isoformat(),
+            "timestamp": complaint.created_at.isoformat() + "Z",
+            "escalation_flag": priority.escalation_flag if priority else False,
+            "metrics": {
+                "urgency": priority.urgency if priority else 0.0,
+                "impact": priority.impact if priority else 0.0,
+                "systemic_risk": priority.systemic_risk if priority else 0.0,
+                "incident_match": priority.incident_match if priority else 0.0
+            },
+            "context_analysis": priority.context_analysis if priority else "No analysis available",
+            "explanation": priority.explanation_json if priority else "No explanation available"
         })
 
     return DashboardResponse(

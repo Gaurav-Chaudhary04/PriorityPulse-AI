@@ -1,132 +1,119 @@
-# PriorityPulse-AI
+# PriorityPulse-AI: SRE-Aligned Complaint Intelligence Engine
 
-## Overview
-PriorityPulse-AI is a Python-based complaint prioritization system that combines NLP, rule-based AI, and explainable scoring to identify urgent or high-impact customer issues. It is designed as a prototype for a support operations dashboard that highlights critical complaints and explains why they should be escalated.
+## 🚀 Overview
+**PriorityPulse-AI** is a production-grade incident intelligence system designed to move beyond traditional keyword-based customer support. It transforms raw customer complaints into actionable, prioritized technical insights by combining **Deterministic SRE Metrics** with **Probabilistic LLM Reasoning**.
 
-## Current Status
-- Backend API built with FastAPI
-- Complaint persistence via SQLAlchemy
-- NLP preprocessing using spaCy
-- Rule-based analysis and explainability pipeline
-- Priority scoring implementation
-- Static dashboard placeholder included
-- Basic tests available
+Unlike standard NLP systems, PriorityPulse-AI focuses strictly on **Systemic Risk** and **Business Impact**, removing customer-identity bias and focusing on keep-the-lights-on operations.
 
-## Tech Stack
-- Python 3.10+
-- FastAPI
-- SQLAlchemy
-- spaCy
-- SQLite (local prototype)
-- Uvicorn
+---
 
-## Repository Structure
+## 🧠 The I.U.S.M. Scoring Framework
+The core of the system is the hybrid **I.U.S.M.** framework, which balances hard system data with nuanced language understanding.
+
+### 🔴 Deterministic Layer (The "Eyes" of the System)
+These factors are calculated locally using **Vector Similarity (Sentence-Transformers)** and **Time-Decay Algorithms**.
+
+*   **S - Systemic Risk (Mass Incidence)**: 
+    * *Formula*: `Σ (sim_i * e^(-0.1 * hours_ago))`
+    * Detects semantic clusters of similar complaints across the fleet. It Uses an exponential time-decay to prioritize sudden "spikes" in specific problems over historical noise.
+*   **M - Incident Match (Outage Correlation)**: 
+    * Cross-references every incoming complaint against a live (or mock) list of known **Active System Incidents** (e.g., "Stripe API Down"). Values are slammed to zero if similarity falls below a strict 0.55 confidence threshold to prevent false positives.
+
+### 🟣 Probabilistic Layer (The "Brain" of the System)
+These factors are extracted via **Llama-3.1-8b (via Groq)** or **GPT-4** using strict SRE constraints.
+
+*   **U - Urgency**: Analyzes user language for signals of immediate failure, blockages, or emergency status.
+*   **I - Impact (Blast Radius)**: Assesses the criticality of the affected feature (e.g., Payments have higher weight than UI color issues).
+
+### ⚖️ The Weighted Formula
+```python
+Final_Score = (0.35 * S) + (0.15 * M) + (0.25 * U) + (0.25 * I)
 ```
+*   **75 - 100**: CRITICAL (Auto-Escalate 🔥)
+*   **55 - 74**: HIGH
+*   **35 - 54**: MEDIUM
+*   **00 - 34**: LOW
+
+---
+
+## 🛠️ Architecture & Workflow
+
+1.  **Ingestion**: Complaint enters via FastAPI.
+2.  **Preprocessing**: Text is cleaned and entities (Product version, OS, UUIDs) are extracted via **spaCy**.
+3.  **Vectorization**: The text is converted into a 384-dimensional embedding.
+4.  **Deterministic Engine**: 
+    *   Searches SQLite for semantic neighbors (Systemic Risk).
+    *   Compares against active outages (Incident Match).
+5.  **LLM Inference (Groq)**: The LLM receives the text + the deterministic scores. It performs a "Chain-of-Thought" analysis to determine Urgency and Impact.
+6.  **Scoring**: The Hybrid Formula calculates the final score.
+7.  **Visualization**: Results are served to a high-performance dashboard with full transparency into the "Reasoning" behind the score.
+
+---
+
+## 📂 Project Structure
+```text
 PriorityPulse-AI/
 ├── app/
 │   ├── api/
-│   │   └── routes.py
+│   │   └── routes.py         # FastAPI Endpoints (Complaints, Analyse, Dashboard)
 │   ├── db/
-│   │   └── database.py
+│   │   └── database.py       # SQLAlchemy Session Management
 │   ├── models/
-│   │   ├── complaint.py
-│   │   └── priority.py
+│   │   ├── complaint.py      # Core Complaint Schema (incl. Contextual Fields)
+│   │   └── priority.py       # Scoring Metrics & LLM Reasoning Storage
 │   ├── schemas/
-│   │   ├── request.py
-│   │   └── response.py
+│   │   ├── request.py        # Pydantic Input Validation
+│   │   └── response.py       # Unified API Response Models
 │   ├── services/
-│   │   ├── explainability.py
-│   │   ├── llm_engine.py
-│   │   ├── nlp.py
-│   │   └── scoring.py
-│   └── main.py
-├── dashboard.html
-├── requirements.txt
-├── README.md
-├── CONTRIBUTING.md
-├── CHANGELOG.md
-├── docs/
-│   └── branching-and-workflow.md
-├── test_api.py
-└── test_classification.py
+│   │   ├── nlp.py            # Vector similarity, S & M calculations
+│   │   ├── llm_engine.py     # Groq/OpenAI Integration & SRE Constraints
+│   │   └── scoring.py        # Hybrid Weighted Formula & Escalation Logic
+│   └── main.py               # Application Entrypoint
+├── tests/
+│   └── test_api.py           # End-to-end API Simulation Script
+├── dashboard.html            # Premium SRE Monitoring Dashboard
+├── .env                      # API Keys & Secrets
+├── requirements.txt          # Pinned Dependencies
+├── data/
+│   └── complaints.db         # Local SQLite Database (Generated on first run)
+└── docs/                     # Extended technical documentation and diagrams
 ```
 
-## Setup
-1. Create and activate a virtual environment:
+---
 
+## ⚡ Setup & Installation
+
+### 1. Environment Setup
 ```bash
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-source .venv/bin/activate # macOS/Linux
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
+# OR
+.\venv\Scripts\activate   # Windows
 ```
 
-2. Install dependencies:
-
+### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
-```
-
-3. Download the spaCy model:
-
-```bash
 python -m spacy download en_core_web_sm
 ```
 
-4. Run the app:
+### 3. Configuration
+Create a `.env` file in the root directory:
+```env
+GROQ_API_KEY=your_key_here
+# Optional: OPENAI_API_KEY=your_key_here
+```
 
+### 4. Run the System
 ```bash
-uvicorn app.main:app --reload --port 8000
+# Start the FastAPI Server
+uvicorn app.main:app --reload
+
+# Run a Test Simulation
+python tests/test_api.py
 ```
 
-5. Open the dashboard at:
+---
 
-```text
-http://localhost:8000/dashboard-page
-```
-
-## API Endpoints
-- `POST /complaints` — create a complaint
-- `POST /analyse` — generate urgency, impact, systemic risk
-- `POST /score` — compute score and escalation outcome
-- `GET /dashboard-page` — serve the dashboard page
-
-## Contribution Workflow
-This repository is organized for collaborative development across three contributors.
-
-### Branch strategy
-- `main`: production-ready code, reviewed PRs only
-- `feature/gaurav-backend`: backend and database improvements
-- `feature/ichcha-ai`: AI, NLP, scoring, and explainability
-- `feature/bk-frontend`: dashboard, tests, and documentation
-
-**Note:** Always create feature branches and submit PRs for code review before merging to main.
-
-### Commit conventions
-- Use Conventional Commits:
-  - `feat: add complaint analysis endpoint`
-  - `fix: correct score normalization`
-  - `docs: update README and contributing guide`
-  - `test: add pipeline coverage tests`
-
-### Pull requests
-- Open one PR per feature branch
-- Require at least one review from another team member
-- Use squash merge into `main` for a clean history
-
-## Testing
-Run the test suite with:
-
-```bash
-python test_api.py
-```
-
-## Notes for reviewers
-- Keep `main` stable and merge only completed feature work
-- Make all documentation changes in `README.md` and `CONTRIBUTING.md`
-- Track team ownership via branch names and issue assignments
-
-## Project goals for evaluation
-- Frequent, meaningful commits from all three team members
-- Clear branch ownership and PR-based collaboration
-- Strong documentation and setup guidance
-- Clean, professional main branch history
+## 📊 Dashboard Access
+Open `dashboard.html` in your browser. It connects to `localhost:8000` to show real-time metrics, internal scores, and the "Chain-of-Thought" reasoning for every prioritized incident.

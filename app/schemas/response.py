@@ -8,31 +8,34 @@ class ComplaintResponse(BaseModel):
     complaint_id: int
 
 
+class ScoreBreakdown(BaseModel):
+    systemic_risk: float
+    urgency: float
+    impact: float
+    incident_match: float
+
+
 class AnalysisResponse(BaseModel):
-    urgency: str
-    impact: str
-    systemic_risk: str
-    confidence: float
+    priority: str
+    scores: ScoreBreakdown
+    context_analysis: str
     explanation: str
-    entities: List[str]
-    keywords: List[str]
+    entities: List[str] = []
+    keywords: List[str] = []
 
 
 class ScoreResponse(BaseModel):
     score: float
     level: str
     escalation_flag: bool
-    urgency: str
-    impact: str
-    systemic_risk: str
-    confidence: float
+    advanced_scores: ScoreBreakdown
+    context_analysis: str
     explanation: str
 
 
 class ExplanationResponse(BaseModel):
-    urgency_reason: str
-    impact_reason: str
-    systemic_risk_reason: str
+    context_analysis: str
+    reasoning: str
     score: float
     level: str
     escalation_flag: bool

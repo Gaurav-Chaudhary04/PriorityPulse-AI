@@ -15,6 +15,7 @@ pip-wheel-metadata/
 venv/
 ENV/
 env/
+priority_pulse_ai/
 
 # environment variables
 .env

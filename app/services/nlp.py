@@ -1,8 +1,11 @@
 import os
 import re
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import spacy
 from spacy.lang.en import English
+from sqlalchemy.orm import Session
+from app.models.complaint import Complaint
 
 # Load spaCy model if available; fallback to simple tokenizer.
 try:
@@ -10,39 +13,6 @@ try:
 except Exception:
     nlp_model = English()
     nlp_model.add_pipe("sentencizer")
-
-NEGATION_WORDS = {"not", "no", "never", "isn't", "wasn't"}
-
-urgency_phrases = [
-    "needs immediate action", "risk of explosion", "emergency situation", "critical issue"
-]
-impact_phrases = [
-    "data breach", "financial loss", "payment failure", "security compromise"
-]
-systemic_phrases = [
-    "all users affected", "system-wide failure", "across multiple regions", "widespread issue"
-]
-
-context_map = {
-    "gas leakage": {"urgency": "critical", "impact": "high", "systemic_risk": "detected"},
-    "data breach": {"impact": "high", "systemic_risk": "detected"},
-    "payment failure": {"impact": "high"},
-    "slow internet": {"impact": "low"},
-    "power outage": {"urgency": "high", "systemic_risk": "detected"},
-}
-
-# Reference sentences for semantic similarity
-reference_sentences = {
-    "system is completely down and users cannot access the service": {
-        "urgency": "critical", "impact": "high", "systemic_risk": "detected"
-    },
-    "all users are affected and the issue is spreading across regions": {
-        "urgency": "high", "impact": "high", "systemic_risk": "detected"
-    },
-    "a single user is experiencing a cosmetic bug with no functional impact": {
-        "urgency": "low", "impact": "low", "systemic_risk": "not_detected"
-    },
-}
 
 # Singleton for Sentence Transformer model
 _sentence_transformer_model = None
@@ -54,35 +24,26 @@ def get_sentence_transformer_model():
         try:
             from sentence_transformers import SentenceTransformer
             _sentence_transformer_model = SentenceTransformer("all-MiniLM-L6-v2")
-        except ImportError:
+        except Exception as e:
+            print(f"Failed to load sentence_transformers: {e}")
             _sentence_transformer_model = None
     return _sentence_transformer_model
 
 
 def preprocess_text(text: str) -> Dict[str, List[str]]:
-    """Extract entities and keywords from a complaint text.
-
-    Args:
-        text (str): Raw complaint text.
-
-    Returns:
-        Dict[str, List[str]]: entities and keywords.
-    """
     if not text or not text.strip():
-        raise ValueError("Complaint text must be non-empty")
+        return {"entities": [], "keywords": []}
 
     if hasattr(nlp_model, "pipe") and nlp_model.meta.get("name") == "en_core_web_sm":
         doc = nlp_model(text)
         entities = [f"{ent.text}:{ent.label_}" for ent in doc.ents]
         keywords = [token.lemma_.lower() for token in doc if token.is_alpha and not token.is_stop]
     else:
-        # Simple fallback using regex
         entities = re.findall(r"\b[A-Z][a-z]+\b", text)
         tokens = re.findall(r"\w+", text.lower())
         stop_words = {"the", "and", "or", "a", "an", "to", "of", "in", "for", "on", "with", "is", "are"}
         keywords = [tok for tok in tokens if tok not in stop_words and len(tok) > 2]
 
-    # Reduce duplicates while preserving order
     seen = set()
     unique_keywords = []
     for kw in keywords:
@@ -96,146 +57,106 @@ def preprocess_text(text: str) -> Dict[str, List[str]]:
     }
 
 
-def detect_negation(tokens: List[str], keyword_index: int) -> bool:
-    """Return True if keyword at keyword_index is negated within a 3-word window before it."""
-    start = max(0, keyword_index - 3)
-    for i in range(start, keyword_index):
-        if tokens[i] in NEGATION_WORDS:
-            return True
-    return False
-
-
-def match_phrases(text_lower: str, phrase_list: List[str]) -> List[str]:
-    """Return all phrases from phrase_list found in text_lower."""
-    return [phrase for phrase in phrase_list if phrase in text_lower]
-
-
-def detect_priority_signals(text: str) -> Dict[str, object]:
-    """Detect systemic risk, impact, and urgency signals from complaint text."""
-    text_lower = text.lower().strip()
-    if not text_lower:
-        raise ValueError("Complaint text must be non-empty")
-
-    tokens = re.findall(r"\w+", text_lower)
-
-    systemic_terms = [
-        "many users", "multiple users", "everyone", "all users", "system-wide",
-        "platform issue", "widespread", "affecting users", "global issue"
-    ]
-    high_impact_terms = [
-        "payment failure", "transaction failed", "money", "funds", "charge", "billing",
-        "fraud", "security breach", "data loss", "account compromise"
-    ]
-    urgency_terms = [
-        "urgent", "immediately", "critical", "asap", "as soon as possible",
-        "emergency", "down", "broken"
-    ]
-
-    systemic_risk = "not_detected"
-    impact = "low"
-    urgency = "low"
-    detected_context = None
-    explanation: List[str] = []
-
-    # Phrase-level detection
-    matched_urgency_phrases = match_phrases(text_lower, urgency_phrases)
-    matched_impact_phrases = match_phrases(text_lower, impact_phrases)
-    matched_systemic_phrases = match_phrases(text_lower, systemic_phrases)
-
-    if matched_urgency_phrases:
-        urgency = "critical"
-        explanation.extend([f"Matched urgency phrase '{p}'" for p in matched_urgency_phrases])
-
-    if matched_impact_phrases:
-        impact = "high"
-        explanation.extend([f"Matched impact phrase '{p}'" for p in matched_impact_phrases])
-
-    if matched_systemic_phrases:
-        systemic_risk = "detected"
-        explanation.extend([f"Matched systemic phrase '{p}'" for p in matched_systemic_phrases])
-
-    # Direct keyword detection with negation handling
-    for idx, token in enumerate(tokens):
-        if token in urgency_terms and not detect_negation(tokens, idx):
-            urgency = "critical"
-            explanation.append(f"Detected urgency keyword '{token}'")
-        elif token in urgency_terms and detect_negation(tokens, idx):
-            explanation.append(f"Negated urgency keyword '{token}' ignored")
-
-        if token in high_impact_terms and not detect_negation(tokens, idx):
-            impact = "high"
-            explanation.append(f"Detected impact keyword '{token}'")
-        elif token in high_impact_terms and detect_negation(tokens, idx):
-            explanation.append(f"Negated impact keyword '{token}' ignored")
-
-        if token in systemic_terms and not detect_negation(tokens, idx):
-            systemic_risk = "detected"
-            explanation.append(f"Detected systemic keyword '{token}'")
-        elif token in systemic_terms and detect_negation(tokens, idx):
-            explanation.append(f"Negated systemic keyword '{token}' ignored")
-
-    # Context mapping overrides
-    for context_key, context_values in context_map.items():
-        if context_key in text_lower:
-            detected_context = context_key
-            explanation.append(f"Detected '{context_key}' → context map applied")
-            if "urgency" in context_values:
-                urgency = context_values["urgency"]
-            if "impact" in context_values:
-                impact = context_values["impact"]
-            if "systemic_risk" in context_values:
-                systemic_risk = context_values["systemic_risk"]
-            break
-
-    # Semantic similarity detection
-    semantic_urgency = None
-    semantic_impact = None
-    semantic_systemic = None
-    semantic_explanation = ""
+def calculate_systemic_risk_score(current_complaint: Complaint, db: Session, hours_window: int = 24, similarity_threshold: float = 0.55) -> float:
+    """Calculate time-decayed systemic risk based on semantic similarity to recent complaints."""
+    import math
     model = get_sentence_transformer_model()
-    if model is not None:
-        try:
-            from sentence_transformers import util
+    if model is None:
+        return 0.0
 
-            ref_texts = list(reference_sentences.keys())
-            ref_embeddings = model.encode(ref_texts, convert_to_tensor=True)
-            text_embedding = model.encode(text_lower, convert_to_tensor=True)
+    target_text = current_complaint.text
+    if current_complaint.problem_description:
+        target_text += " " + current_complaint.problem_description
 
-            similarities = util.cos_sim(text_embedding, ref_embeddings)[0]
-            most_sim, most_idx = float(similarities.max()), int(similarities.argmax())
+    now = datetime.utcnow()
+    cutoff_time = now - timedelta(hours=hours_window)
+    
+    # Query recent complaints from DB (exclude current one)
+    recent_complaints = db.query(Complaint).filter(Complaint.created_at >= cutoff_time).filter(Complaint.id != current_complaint.id).all()
+    
+    if not recent_complaints:
+        return 0.0
 
-            if most_sim > 0.70:  # Threshold for meaningful match
-                top_ref = ref_texts[most_idx]
-                semantic_signals = reference_sentences[top_ref]
-                semantic_urgency = semantic_signals["urgency"]
-                semantic_impact = semantic_signals["impact"]
-                semantic_systemic = semantic_signals["systemic_risk"]
-                semantic_explanation = f"Semantic match: '{top_ref}' (similarity: {most_sim:.2f}) → urgency={semantic_urgency}, impact={semantic_impact}, systemic={semantic_systemic}"
-                explanation.append(semantic_explanation)
-            else:
-                explanation.append("Semantic similarity below threshold; no adjustment")
-        except Exception as e:
-            explanation.append(f"Semantic processing failed: {str(e)}")
-    else:
-        explanation.append("Sentence Transformers not available; skipped semantic similarity")
+    try:
+        from sentence_transformers import util
+        
+        target_embedding = model.encode(target_text, convert_to_tensor=True)
+        texts_to_compare = []
+        for c in recent_complaints:
+            combo = c.text
+            if c.problem_description:
+                combo += " " + c.problem_description
+            texts_to_compare.append(combo)
 
-    # Collect signal details
-    signals = {
-        "systemic_matches": [term for term in systemic_terms if term in text_lower] + matched_systemic_phrases,
-        "impact_matches": [term for term in high_impact_terms if term in text_lower] + matched_impact_phrases,
-        "urgency_matches": [term for term in urgency_terms if term in text_lower] + matched_urgency_phrases,
-    }
+        compare_embeddings = model.encode(texts_to_compare, convert_to_tensor=True)
+        similarities = util.cos_sim(target_embedding, compare_embeddings)[0]
 
-    return {
-        "systemic_risk": systemic_risk,
-        "impact": impact,
-        "urgency": urgency,
-        "signals": signals,
-        "detected_context": detected_context,
-        "explanation": "\n".join(explanation) if explanation else "",
-        "semantic_urgency": semantic_urgency,
-        "semantic_impact": semantic_impact,
-        "semantic_systemic": semantic_systemic,
-        "semantic_explanation": semantic_explanation,
-    }
+        weighted_sum = 0.0
+        
+        cutoff_1hr = now - timedelta(hours=1)
+        cutoff_7hr = now - timedelta(hours=7)
+        recent_1hr_count = 0
+        prev_6hr_count = 0
 
+        for idx, sim in enumerate(similarities):
+            sim_val = float(sim)
+            if sim_val > similarity_threshold:
+                c = recent_complaints[idx]
+                hours_ago = (now - c.created_at).total_seconds() / 3600.0
+                
+                # Exponential decay
+                decay_weight = math.exp(-0.1 * hours_ago)
+                contribution = sim_val * decay_weight
+                weighted_sum += contribution
+                
+                if c.created_at >= cutoff_1hr:
+                    recent_1hr_count += 1
+                elif c.created_at >= cutoff_7hr:
+                    prev_6hr_count += 1
+
+        risk_score = min(1.0, weighted_sum / 5.0)
+        
+        # Spike detection
+        avg_previous_6hr_count = prev_6hr_count / 6.0
+        spike = recent_1hr_count / max(avg_previous_6hr_count, 1.0)
+        
+        if spike > 2:
+            risk_score += 0.2
+            
+        return min(risk_score, 1.0)
+    except Exception as e:
+        print(f"Error calculating systemic risk: {e}")
+        return 0.0
+
+
+def calculate_incident_match_score(text: str, problem_description: Optional[str], active_incidents: List[str]) -> float:
+    """Calculate max semantic similarity between the complaint and a list of active incidents."""
+    if not active_incidents:
+        return 0.0
+    
+    model = get_sentence_transformer_model()
+    if model is None:
+        return 0.0
+
+    target_text = text
+    if problem_description:
+        target_text += " " + problem_description
+
+    try:
+        from sentence_transformers import util
+        target_embedding = model.encode(target_text, convert_to_tensor=True)
+        incident_embeddings = model.encode(active_incidents, convert_to_tensor=True)
+        
+        similarities = util.cos_sim(target_embedding, incident_embeddings)[0]
+        max_sim = float(similarities.max())
+        
+        if max_sim < 0.4:
+            return 0.0
+            
+        if max_sim > 0.8:
+            return 1.0
+        
+        return min(max_sim, 1.0)
+    except Exception as e:
+        print(f"Error calculating incident match score: {e}")
+        return 0.0

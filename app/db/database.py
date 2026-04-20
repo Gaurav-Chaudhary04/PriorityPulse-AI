@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./complaints.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/complaints.db")
 
 # SQLite and PostgreSQL connection engines are both supported via DATABASE_URL
 engine = create_engine(
